@@ -1,0 +1,8 @@
+node_modules/
+dist/
+release/
+resources/bin/ollama
+resources/bin/setup-audio
+resources/BlackHole2ch.pkg
+*.db
+.DS_Store

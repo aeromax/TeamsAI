@@ -1,0 +1,51 @@
+appId: com.teamsai.local
+productName: Teams AI
+copyright: Copyright © 2024
+
+directories:
+  buildResources: resources
+  output: release
+
+files:
+  - dist/**/*
+  - electron/**/*
+  - node_modules/**/*
+  - package.json
+
+extraResources:
+  - from: resources/BlackHole2ch.pkg
+    to: BlackHole2ch.pkg
+    filter:
+      - "**/*"
+  - from: resources/bin/ollama
+    to: bin/ollama
+  - from: resources/bin/setup-audio
+    to: bin/setup-audio
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - universal
+  category: public.app-category.productivity
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: entitlements.mac.plist
+  entitlementsInherit: entitlements.mac.plist
+  icon: resources/icon.icns
+
+dmg:
+  contents:
+    - x: 410
+      y: 150
+      type: link
+      path: /Applications
+    - x: 130
+      y: 150
+      type: file
+
+nsis:
+  oneClick: false
+  perMachine: false
+
+publish: null
