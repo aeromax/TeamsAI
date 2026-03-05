@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 
 const STEPS = [
   { id: 'blackhole', label: 'Installing audio driver', detail: 'BlackHole 2ch virtual audio device' },
@@ -123,8 +123,6 @@ export default function SetupWizard({ onComplete }) {
   const [allDone, setAllDone] = useState(false)
   // When true, show the BlackHole approval interstitial instead of the step list
   const [needsApproval, setNeedsApproval] = useState(false)
-  // Resume point after approval
-  const resumeRef = useRef(null)
 
   function setStatus(id, status) {
     setStatuses((prev) => ({ ...prev, [id]: status }))
@@ -136,28 +134,25 @@ export default function SetupWizard({ onComplete }) {
     setErrors((prev) => ({ ...prev, [id]: msg }))
   }
 
+  function isBlackHoleMissingError(errorText) {
+    const msg = String(errorText || '').toLowerCase()
+    return msg.includes('blackhole') && msg.includes('not found')
+  }
+
   async function runFromAudioStep() {
     setNeedsApproval(false)
     setStatus('audio', 'running')
 
-    // Check if BlackHole is now visible
-    const check = await window.electronAPI.checkBlackHole()
-    if (!check.found) {
-      // Still not approved — show prompt again
-      setStatus('audio', 'waiting')
-      setNeedsApproval(true)
-      return false
-    }
-
     const audioResult = await window.electronAPI.configureAudio()
     if (!audioResult.success) {
-      // If still not found after approval, show prompt again
-      if (audioResult.error?.toLowerCase().includes('not found')) {
+      // If driver is still missing, show approval prompt again
+      if (isBlackHoleMissingError(audioResult.error)) {
         setStatus('audio', 'waiting')
         setNeedsApproval(true)
         return false
       }
       setStatus('audio', 'error')
+      setError('audio', audioResult.error)
       return false
     }
 
@@ -193,23 +188,12 @@ export default function SetupWizard({ onComplete }) {
     setStatus('blackhole', 'done')
 
     // ── Step 1: Configure audio routing ──────────────────────────────────────
-    // Check upfront — if BlackHole isn't active yet, pause and show the prompt
-    const check = await window.electronAPI.checkBlackHole()
-    if (!check.found) {
-      setStatus('audio', 'waiting')
-      setNeedsApproval(true)
-      // Resume will be called from the prompt's "Continue" button
-      resumeRef.current = runModelsSetup
-      return
-    }
-
     setStatus('audio', 'running')
     const audioResult = await window.electronAPI.configureAudio()
     if (!audioResult.success) {
-      if (audioResult.error?.toLowerCase().includes('not found')) {
+      if (isBlackHoleMissingError(audioResult.error)) {
         setStatus('audio', 'waiting')
         setNeedsApproval(true)
-        resumeRef.current = runModelsSetup
         return
       }
       setStatus('audio', 'error')
