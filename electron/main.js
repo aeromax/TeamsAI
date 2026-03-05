@@ -382,7 +382,45 @@ app.on('before-quit', () => {
 
 // --- Setup ---
 
+function checkBlackHoleInstalled() {
+  // Primary check: use setup-audio status (CoreAudio-level check).
+  if (fs.existsSync(setupAudioBinPath)) {
+    const tmpBin = '/tmp/teamsai-setup-audio'
+    try {
+      fs.copyFileSync(setupAudioBinPath, tmpBin)
+      fs.chmodSync(tmpBin, '755')
+      const { spawnSync } = require('child_process')
+      const result = spawnSync(tmpBin, ['status'], { encoding: 'utf8' })
+      const output = ((result.stdout || '') + (result.stderr || '')).toLowerCase()
+      if (output.includes('blackhole: found')) return { found: true }
+    } catch {}
+    finally {
+      try { fs.unlinkSync(tmpBin) } catch {}
+    }
+  }
+
+  // Fallback: detect BlackHole from macOS audio device inventory.
+  try {
+    const { spawnSync } = require('child_process')
+    const result = spawnSync('system_profiler', ['SPAudioDataType'], {
+      encoding: 'utf8',
+      timeout: 15000,
+      maxBuffer: 8 * 1024 * 1024,
+    })
+    const output = ((result.stdout || '') + (result.stderr || '')).toLowerCase()
+    if (output.includes('blackhole')) return { found: true }
+  } catch {}
+
+  return { found: false }
+}
+
 ipcMain.handle('setup:install-blackhole', async () => {
+  // If BlackHole already exists on the system, skip package lookup/install.
+  const check = checkBlackHoleInstalled()
+  if (check.found) {
+    return { success: true, skipped: true }
+  }
+
   const pkgPath = findBlackholePkg()
   if (!pkgPath) {
     return { success: false, error: 'BlackHole package not found in resources.' }
@@ -404,17 +442,7 @@ ipcMain.handle('setup:install-blackhole', async () => {
 
 // Check whether BlackHole device is visible to CoreAudio (returns { found: bool })
 ipcMain.handle('setup:check-blackhole', async () => {
-  if (!fs.existsSync(setupAudioBinPath)) return { found: false }
-  const tmpBin = '/tmp/teamsai-setup-audio'
-  try {
-    fs.copyFileSync(setupAudioBinPath, tmpBin)
-    fs.chmodSync(tmpBin, '755')
-  } catch { return { found: false } }
-  const { spawnSync } = require('child_process')
-  const result = spawnSync(tmpBin, ['status'], { encoding: 'utf8' })
-  try { fs.unlinkSync(tmpBin) } catch {}
-  const output = (result.stdout || '') + (result.stderr || '')
-  return { found: output.toLowerCase().includes('blackhole: found') }
+  return checkBlackHoleInstalled()
 })
 
 // Open macOS Privacy & Security settings pane

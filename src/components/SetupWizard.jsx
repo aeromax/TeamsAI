@@ -181,11 +181,14 @@ export default function SetupWizard({ onComplete }) {
 
     // ── Step 0: Install BlackHole ─────────────────────────────────────────────
     setStatus('blackhole', 'running')
-    const bhResult = await window.electronAPI.installBlackHole()
-    if (!bhResult.success) {
-      setStatus('blackhole', 'error')
-      setError('blackhole', bhResult.error)
-      return
+    const blackHoleCheck = await window.electronAPI.checkBlackHole()
+    if (!blackHoleCheck.found) {
+      const bhResult = await window.electronAPI.installBlackHole()
+      if (!bhResult.success) {
+        setStatus('blackhole', 'error')
+        setError('blackhole', bhResult.error)
+        return
+      }
     }
     setStatus('blackhole', 'done')
 
