@@ -29,6 +29,7 @@ export default function MeetingPanel({
   const [micDevice, setMicDevice] = useState('')
   const timerRef = useRef(null)
   const transcriptEndRef = useRef(null)
+  const hasTeamsAIOutput = outputDevices.some((name) => name.toLowerCase().includes('teams ai output'))
 
   const meetingIdRef = useRef(activeMeetingId)
   meetingIdRef.current = activeMeetingId
@@ -312,7 +313,7 @@ export default function MeetingPanel({
           <p className="text-xs text-gray-600 leading-relaxed">
             In Teams <span className="text-gray-500">→ Settings → Devices</span>, set{' '}
             <strong className="text-gray-400">Speaker</strong> to{' '}
-            <strong className="text-gray-400">Teams AI Output</strong>.
+            <strong className="text-gray-400">{hasTeamsAIOutput ? 'Teams AI Output' : 'BlackHole 2ch'}</strong>.
             {' '}If using AirPods, also set{' '}
             <strong className="text-gray-400">Microphone</strong> to{' '}
             <strong className="text-gray-400">MacBook Pro Microphone</strong>{' '}

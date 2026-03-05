@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, shell, dialog, protocol, net } = require('electron')
 const path = require('path')
-const { spawn, execSync } = require('child_process')
+const { spawn, spawnSync, execSync } = require('child_process')
 const fs = require('fs')
 const { Worker: NodeWorker } = require('worker_threads')
 
@@ -33,12 +33,41 @@ const resourcesDir = isDev
 
 const ollamaBinPath = path.join(resourcesDir, 'bin', 'ollama')
 const setupAudioBinPath = path.join(resourcesDir, 'bin', 'setup-audio')
+const setupAudioSourcePath = path.join(__dirname, '..', 'swift', 'setup-audio', 'main.swift')
 
 // Find BlackHole pkg by prefix — handles versioned filenames like BlackHole2ch-0.6.1.pkg
 function findBlackholePkg() {
   const entries = fs.readdirSync(resourcesDir)
   const pkg = entries.find((f) => f.startsWith('BlackHole') && f.endsWith('.pkg'))
   return pkg ? path.join(resourcesDir, pkg) : null
+}
+
+function ensureSetupAudioBinary() {
+  if (fs.existsSync(setupAudioBinPath)) return
+
+  if (!isDev) {
+    console.warn('[main] setup-audio binary missing in packaged resources:', setupAudioBinPath)
+    return
+  }
+
+  if (!fs.existsSync(setupAudioSourcePath)) {
+    console.warn('[main] setup-audio source missing:', setupAudioSourcePath)
+    return
+  }
+
+  try {
+    fs.mkdirSync(path.dirname(setupAudioBinPath), { recursive: true })
+    const result = spawnSync('swiftc', [setupAudioSourcePath, '-o', setupAudioBinPath], { encoding: 'utf8' })
+    if (result.status === 0 && fs.existsSync(setupAudioBinPath)) {
+      fs.chmodSync(setupAudioBinPath, '755')
+      console.log('[main] Built setup-audio binary for dev:', setupAudioBinPath)
+      return
+    }
+    const output = `${result.stdout || ''}${result.stderr || ''}`.trim()
+    console.error('[main] Failed to build setup-audio binary.', output || `swiftc exited with ${result.status}`)
+  } catch (err) {
+    console.error('[main] Failed to compile setup-audio binary:', err.message)
+  }
 }
 
 const userDataDir = app.getPath('userData')
@@ -328,6 +357,8 @@ function createWindow() {
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
+  ensureSetupAudioBinary()
+
   // Serve local Whisper model files to the renderer/workers without browser restrictions
   protocol.handle('model', async (request) => {
     const pathname = new URL(request.url).pathname.replace(/^\//, '')
@@ -453,7 +484,8 @@ ipcMain.handle('setup:open-privacy-settings', () => {
 // Shared helper — copies the binary, runs setup-audio with args, returns result
 function runSetupAudio(args, sleepFirst = false) {
   if (!fs.existsSync(setupAudioBinPath)) {
-    return { success: false, error: 'setup-audio binary not found.' }
+    const hint = isDev ? ' Run `npm run compile-swift` and relaunch the app.' : ''
+    return { success: false, error: `setup-audio binary not found.${hint}` }
   }
   const tmpBin = '/tmp/teamsai-setup-audio'
   try {

@@ -139,12 +139,21 @@ export default function SetupWizard({ onComplete }) {
     return msg.includes('blackhole') && msg.includes('not found')
   }
 
+  function isSetupAudioBinaryMissingError(errorText) {
+    const msg = String(errorText || '').toLowerCase()
+    return msg.includes('setup-audio binary not found')
+  }
+
   async function runFromAudioStep() {
     setNeedsApproval(false)
     setStatus('audio', 'running')
 
     const audioResult = await window.electronAPI.configureAudio()
     if (!audioResult.success) {
+      if (isSetupAudioBinaryMissingError(audioResult.error)) {
+        setStatus('audio', 'done')
+        return true
+      }
       // If driver is still missing, show approval prompt again
       if (isBlackHoleMissingError(audioResult.error)) {
         setStatus('audio', 'waiting')
@@ -191,6 +200,11 @@ export default function SetupWizard({ onComplete }) {
     setStatus('audio', 'running')
     const audioResult = await window.electronAPI.configureAudio()
     if (!audioResult.success) {
+      if (isSetupAudioBinaryMissingError(audioResult.error)) {
+        setStatus('audio', 'done')
+        await runModelsSetup()
+        return
+      }
       if (isBlackHoleMissingError(audioResult.error)) {
         setStatus('audio', 'waiting')
         setNeedsApproval(true)
