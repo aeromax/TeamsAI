@@ -71,6 +71,8 @@ function ensureSetupAudioBinary() {
 }
 
 const userDataDir = app.getPath('userData')
+const ollamaUserBinPath = path.join(userDataDir, 'bin', 'ollama')
+const OLLAMA_MAC_ZIP_URL = 'https://ollama.com/download/Ollama-darwin.zip'
 const modelsDir = path.join(userDataDir, 'models', 'ollama')
 const whisperCacheDir = path.join(userDataDir, 'models', 'whisper')
 
@@ -236,6 +238,7 @@ function ollamaEnv() {
 
 function ollamaBin() {
   if (fs.existsSync(ollamaBinPath)) return ollamaBinPath
+  if (fs.existsSync(ollamaUserBinPath)) return ollamaUserBinPath
 
   // Check common install locations (Homebrew, system)
   const candidates = [
@@ -257,6 +260,64 @@ function ollamaBin() {
   } catch {}
 
   return null // not found
+}
+
+async function ensureOllamaRuntime(event = null, model = null) {
+  const existing = ollamaBin()
+  if (existing) return { success: true, path: existing, downloaded: false }
+
+  if (process.platform !== 'darwin') {
+    return {
+      success: false,
+      error: 'Automatic Ollama install is only supported on macOS. Install from https://ollama.com/download.',
+    }
+  }
+
+  const tmpDir = fs.mkdtempSync(path.join(app.getPath('temp'), 'teamsai-ollama-'))
+  const zipPath = path.join(tmpDir, 'Ollama-darwin.zip')
+  const extractedBin = path.join(tmpDir, 'Ollama.app', 'Contents', 'Resources', 'ollama')
+
+  try {
+    event?.sender.send('setup:pull-progress', { model, line: 'Downloading Ollama runtime…', pct: 0 })
+    await downloadFile(OLLAMA_MAC_ZIP_URL, zipPath, (p) => {
+      event?.sender.send('setup:pull-progress', {
+        model,
+        line: 'Downloading Ollama runtime…',
+        pct: Math.max(1, Math.round(p * 100)),
+      })
+    })
+
+    const unzipResult = spawnSync('unzip', ['-q', zipPath, '-d', tmpDir], { encoding: 'utf8' })
+    if (unzipResult.status !== 0) {
+      const output = `${unzipResult.stdout || ''}${unzipResult.stderr || ''}`.trim()
+      throw new Error(output || `unzip exited with ${unzipResult.status}`)
+    }
+    if (!fs.existsSync(extractedBin)) {
+      throw new Error('Downloaded archive does not contain Ollama.app CLI binary')
+    }
+
+    fs.mkdirSync(path.dirname(ollamaUserBinPath), { recursive: true })
+    fs.copyFileSync(extractedBin, ollamaUserBinPath)
+    fs.chmodSync(ollamaUserBinPath, '755')
+
+    event?.sender.send('setup:pull-progress', { model, line: 'Ollama runtime ready', pct: 100 })
+    return { success: true, path: ollamaUserBinPath, downloaded: true }
+  } catch (err) {
+    return { success: false, error: `Failed to install Ollama runtime automatically: ${err.message}` }
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch {}
+  }
+}
+
+function ollamaUnavailableHint() {
+  const bin = ollamaBin()
+  if (bin) {
+    return `Ollama binary found at ${bin} but server never became reachable on :11434.`
+  }
+  if (app.isPackaged) {
+    return `Bundled Ollama runtime missing at ${ollamaBinPath}. Setup can auto-download Ollama to ${ollamaUserBinPath}.`
+  }
+  return `Ollama binary not found. Setup can auto-download Ollama, or you can place it at ${ollamaBinPath}.`
 }
 
 async function isOllamaRunning() {
@@ -293,7 +354,7 @@ async function startOllama() {
 
   const bin = ollamaBin()
   if (!bin) {
-    console.error('[main] Ollama binary not found — download from https://ollama.com')
+    console.error('[main]', ollamaUnavailableHint())
     return
   }
 
@@ -527,13 +588,18 @@ ipcMain.handle('setup:list-outputs', async () => {
 ipcMain.handle('setup:teardown-audio', async () => runSetupAudio('teardown', false))
 
 ipcMain.handle('setup:pull-model', async (event, model) => {
+  const runtime = await ensureOllamaRuntime(event, model)
+  if (!runtime.success) {
+    return { success: false, error: runtime.error }
+  }
+
+  if (!(await isOllamaRunning())) {
+    await startOllama()
+  }
+
   const ready = await waitForOllama()
   if (!ready) {
-    const bin = ollamaBin()
-    const hint = bin
-      ? `Ollama binary found at ${bin} but server never became reachable on :11434.`
-      : 'Ollama not found. Download from https://ollama.com and relaunch the app.'
-    return { success: false, error: hint }
+    return { success: false, error: ollamaUnavailableHint() }
   }
 
   try {

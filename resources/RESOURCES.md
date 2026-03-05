@@ -14,6 +14,10 @@ Download the macOS universal binary from: https://ollama.com/download
 Place the CLI binary at: `resources/bin/ollama`
 Make executable: `chmod +x resources/bin/ollama`
 
+If missing, setup will attempt to download and install the Ollama CLI automatically
+to the app `userData/bin/ollama` directory.
+Bundling is still recommended for offline/restricted-network installs.
+
 ### `bin/setup-audio`
 Compile from the Swift source:
 ```bash

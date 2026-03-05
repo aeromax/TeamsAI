@@ -3,7 +3,7 @@ import { useState } from 'react'
 const STEPS = [
   { id: 'blackhole', label: 'Installing audio driver', detail: 'BlackHole 2ch virtual audio device' },
   { id: 'audio', label: 'Configuring audio routing', detail: 'Creating Multi-Output Device in CoreAudio' },
-  { id: 'ollama', label: 'Downloading AI model', detail: 'llama3.2:3b (~2 GB) — one-time download' },
+  { id: 'ollama', label: 'Preparing local AI runtime', detail: 'Starting Ollama + downloading llama3.2:3b (~2 GB)' },
   { id: 'whisper', label: 'Downloading transcription model', detail: 'Whisper small.en (~240 MB)' },
 ]
 
@@ -232,12 +232,15 @@ export default function SetupWizard({ onComplete }) {
     const removePullListener = window.electronAPI.onPullProgress(({ model, line, pct }) => {
       if (model === 'llama3.2:3b') setPct('ollama', pct)
     })
-    const ollamaResult = await window.electronAPI.pullModel('llama3.2:3b')
-    removePullListener()
-    if (!ollamaResult.success) {
-      setStatus('ollama', 'error')
-      setError('ollama', ollamaResult.error)
-      return
+    try {
+      const ollamaResult = await window.electronAPI.pullModel('llama3.2:3b')
+      if (!ollamaResult.success) {
+        setStatus('ollama', 'error')
+        setError('ollama', ollamaResult.error)
+        return
+      }
+    } finally {
+      removePullListener()
     }
     setStatus('ollama', 'done')
 
